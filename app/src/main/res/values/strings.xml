@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">bybit-direct</string>
+    <string name="admin_url">https://linkapp.tdsdomain.ru/webview-admin/app.php/</string>
+</resources>
