@@ -5,6 +5,7 @@ plugins {
 }
 
 android {
+    //namespace и applicationId должны совпадать
     namespace = "com.example.bybit_direct"
     compileSdk = 36
 
