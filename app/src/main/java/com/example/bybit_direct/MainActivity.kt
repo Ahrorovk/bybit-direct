@@ -1,15 +1,20 @@
 package com.example.bybit_direct
 
 import android.annotation.SuppressLint
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
+import android.webkit.CookieManager
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.annotation.RequiresApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -19,8 +24,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -33,30 +40,30 @@ import java.net.URLEncoder
 class MainActivity : ComponentActivity() {
 
     private val adminUrl by lazy { getString(R.string.admin_url) }
-    private val projectParam by lazy { getString(R.string.app_name) }
+    private val projectParam by lazy { getString(R.string.app_name_admin) }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Осторожно: операции сети выполняются в корутинах (IO)
+        CookieManager.getInstance().setAcceptCookie(true)
         setContent {
             Surface(modifier = Modifier.fillMaxSize()) {
-                LauncherScreen(
-                    adminUrl = adminUrl,
-                    projectParam = projectParam
-                )
+                LauncherScreen(adminUrl, projectParam)
             }
         }
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
+@SuppressLint("SetJavaScriptEnabled", "ContextCastToActivity")
 @Composable
 fun LauncherScreen(adminUrl: String, projectParam: String) {
+    var hasError by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var targetUrl by remember { mutableStateOf<String?>(null) }
     var customUA by remember { mutableStateOf<String?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
-
+    val context = LocalContext.current
     LaunchedEffect(key1 = adminUrl, key2 = projectParam) {
         loading = true
         errorMsg = null
@@ -73,7 +80,7 @@ fun LauncherScreen(adminUrl: String, projectParam: String) {
                 val ua = parts[0].trim()
                 val url = parts[1].trim()
 
-                customUA = if (ua.isBlank()) null else ua
+                customUA = ua.ifBlank { null }
                 targetUrl = url
             } else {
                 errorMsg = "Invalid response format from admin"
@@ -81,6 +88,7 @@ fun LauncherScreen(adminUrl: String, projectParam: String) {
 
         } catch (t: Throwable) {
             errorMsg = "Network error: ${t.message}"
+            hasError = true
         } finally {
             loading = false
         }
@@ -94,51 +102,38 @@ fun LauncherScreen(adminUrl: String, projectParam: String) {
                 CircularProgressIndicator(modifier = Modifier.fillMaxSize())
             }
         }
-        errorMsg != null -> {
+
+        errorMsg != null || hasError -> {
             Surface(modifier = Modifier.fillMaxSize()) {
-                Text(text = errorMsg ?: "Unknown error")
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("Проблемы с интернетом", modifier = Modifier.padding(bottom = 8.dp))
+                    Text(
+                        "Пожалуйста, проверьте интернет соединение или отключите VPN",
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    Text("Попробовать снова")
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Подпишитесь на телеграм канал чтобы отслеживать доступность сайта")
+                }
             }
         }
+
         targetUrl != null -> {
-            // Встраиваем WebView
-            AndroidView(factory = { context ->
-                WebView(context).apply {
 
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
-                    settings.javaScriptCanOpenWindowsAutomatically = true
-                    settings.setSupportMultipleWindows(true)
-                    WebView.setWebContentsDebuggingEnabled(true)
+            HybridWebView(
+                url = targetUrl!!,
+                customUA
+                    ?: "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
+            )
 
-                    settings.cacheMode = WebSettings.LOAD_DEFAULT
-                    // Установим custom UA если пришёл
-                    if (!customUA.isNullOrBlank()) {
-                        settings.userAgentString = customUA
-                    }
-                    // WebViewClient чтобы обрабатывать редиректы внутри WebView
-                    webViewClient = object : WebViewClient() {
-                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                            // Все ссылки открываем внутри WebView (поддержка редиректов)
-                            request?.url?.let { view?.loadUrl(it.toString()) }
-                            return true
-                        }
-                    }
-                    // Загружаем целевой URL
-                    loadUrl(targetUrl!!)
-                }
-            }, update = { webView ->
-                // Если recompose с новым UA/URL — применим
-                if (!customUA.isNullOrBlank()) {
-                    webView.settings.userAgentString = customUA
-                }
-                webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
-                // Не кэшируем вебview
-                webView.clearCache(true)
-            })
         }
+
         else -> {
             Surface(modifier = Modifier.fillMaxSize()) {
                 Text(text = "No URL to open")
@@ -147,7 +142,7 @@ fun LauncherScreen(adminUrl: String, projectParam: String) {
     }
 }
 
-private fun buildAdminRequestUrl(base: String, projectParam: String): String {
+fun buildAdminRequestUrl(base: String, projectParam: String): String {
     val encodedProject = URLEncoder.encode(projectParam, "UTF-8")
     val sep = if (base.contains("?")) "&" else "?"
     return "$base${sep}appname=$encodedProject"
