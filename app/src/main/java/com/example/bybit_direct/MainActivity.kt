@@ -125,11 +125,12 @@ fun LauncherScreen(adminUrl: String, projectParam: String) {
         }
 
         targetUrl != null -> {
+            // Используем реальный User-Agent устройства, если не указан кастомный из админки
+            val userAgent = customUA ?: DeviceInfoHelper.generateUserAgent(context)
 
             HybridWebView(
                 url = targetUrl!!,
-                customUA
-                    ?: "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
+                userAgent = userAgent
             )
 
         }
